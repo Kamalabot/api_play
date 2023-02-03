@@ -1,0 +1,49 @@
+#This is the main server file 
+from fastapi import Depends, FastAPI, Response, status, HTTPException, APIRouter 
+from fastapi.params import Body
+from . import db_model
+from .comm_model import reqmerch, resmerch, aggmerch
+
+from sqlalchemy.orm import Session
+from .dbengine import engine, get_db
+db_model.Base.metadata.create_all(bind=engine)
+
+from sqlalchemy import func, distinct
+
+from typing import List
+import json
+
+playserver = FastAPI()
+
+@playserver.get("/")
+def root_route():
+    return {"message":"Server up"}
+
+@playserver.get("/get_items",response_model = List[resmerch])
+def query_items(db: Session = Depends(get_db)):
+    merch_data = db.query(db_model.Merch).limit(10).all()
+    print(merch_data)
+    return merch_data
+
+@playserver.post("/item_id",response_model=resmerch)
+def return_one(item_obj:reqmerch,
+               db: Session = Depends(get_db)):
+    one_row = db.query(db_model.Merch).filter(db_model.Merch.item_id == item_obj.item_id).first()
+    if not one_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f'{item_obj.item_id} not found')
+    return one_row
+
+@playserver.get("/agg_category")
+def category_agg(db: Session = Depends(get_db)):
+    agg_data = db.query(db_model.Merch.categories, 
+                        func.count(db_model.Merch.categories)). \
+                                group_by(db_model.Merch.categories)
+    agg_numbers = agg_data.all()
+    loaded_json = json.loads(str(dict(agg_numbers)))
+    #dumped_json = json.dumps(dict(agg_numbers),indent = 4)
+    if not agg_data.all():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail='Could not process the aggregate')
+    #return dumped_json 
+    return loaded_json
